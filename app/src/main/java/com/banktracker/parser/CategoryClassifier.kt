@@ -2,7 +2,7 @@ package com.banktracker.parser
 
 object CategoryClassifier {
     private val CATEGORIES = mapOf(
-        "🍜 Ăn uống"     to listOf("shopeefood","grabfood","baemin","highlands","kfc","pizza","bun","pho","cafe","com","nha hang"),
+        "🍜 Ăn uống"     to listOf("shopeefood","grabfood","baemin","highlands","kfc","pizza","bun","pho","cafe","com","nha hang","tien rau"),
         "🛒 Mua sắm"     to listOf("shopee","lazada","tiki","vinmart","coopmart","sieu thi"),
         "🚗 Di chuyển"   to listOf("grab","be app","parking","xang","petrolimex","taxi"),
         "🎬 Giải trí"    to listOf("netflix","spotify","steam","game","cinema","cgv","bhd"),
