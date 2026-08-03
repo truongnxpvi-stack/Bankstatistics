@@ -2,12 +2,12 @@ package com.banktracker.data
 
 import androidx.room.*
 
-data class MonthlyTotal(val date: String, val total: Long)
-data class CategoryTotal(val category: String, val total: Long)
 data class DailyTotal(val date: String, val total: Long)
+data class CategoryTotal(val category: String, val total: Long)
 
 @Dao
 interface TransactionDao {
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insert(tx: Transaction)
 
@@ -23,20 +23,18 @@ interface TransactionDao {
     @Query("SELECT COUNT(*) FROM transactions WHERE timestamp >= :from AND timestamp <= :to")
     fun getCount(from: Long, to: Long): Int
 
-    // Thống kê theo ngày — tất cả giao dịch (không lọc type)
     @Query("""
-        SELECT date, SUM(amount) as total 
-        FROM transactions 
-        WHERE timestamp >= :from AND timestamp <= :to
+        SELECT date, SUM(amount) as total
+        FROM transactions
+        WHERE type = 'DEBIT' AND timestamp >= :from AND timestamp <= :to
         GROUP BY date ORDER BY date ASC
     """)
     fun getDailyExpense(from: Long, to: Long): List<DailyTotal>
 
-    // Thống kê theo danh mục — tất cả giao dịch
     @Query("""
-        SELECT category, SUM(amount) as total 
-        FROM transactions 
-        WHERE timestamp >= :from AND timestamp <= :to
+        SELECT category, SUM(amount) as total
+        FROM transactions
+        WHERE type = 'DEBIT' AND timestamp >= :from AND timestamp <= :to
         GROUP BY category ORDER BY total DESC
     """)
     fun getCategoryExpense(from: Long, to: Long): List<CategoryTotal>
