@@ -36,14 +36,69 @@ class MainActivity : AppCompatActivity() {
     private fun onAuthSuccess() {
         findViewById<View>(R.id.mainContent).visibility = View.VISIBLE
         checkPermissions()
-        loadDashboard()
-        findViewById<Button>(R.id.btnHistory).setOnClickListener {
-            startActivity(Intent(this, HistoryActivity::class.java))
-        }
-        findViewById<Button>(R.id.btnStats).setOnClickListener {
-            startActivity(Intent(this, StatsActivity::class.java))
-        }
+      private fun loadDashboard() {
+    val dao = AppDatabase.getInstance(applicationContext).transactionDao()
+    val cal = Calendar.getInstance()
+    val monthEnd = System.currentTimeMillis()
+
+    cal.set(Calendar.DAY_OF_MONTH, 1)
+    cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0); cal.set(Calendar.SECOND, 0)
+    val monthStart = cal.timeInMillis
+
+    cal.timeInMillis = System.currentTimeMillis()
+    cal.set(Calendar.DAY_OF_WEEK, cal.firstDayOfWeek)
+    cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0); cal.set(Calendar.SECOND, 0)
+    val weekStart = cal.timeInMillis
+
+    cal.timeInMillis = System.currentTimeMillis()
+    cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0); cal.set(Calendar.SECOND, 0)
+    val dayStart = cal.timeInMillis
+
+    val allTx = dao.getAllSync()
+
+    // Tổng chi = DEBIT, nếu không có thì dùng tổng tất cả
+    val expMonth = dao.getTotalExpense(monthStart, monthEnd)
+        ?: dao.getTotalIncome(monthStart, monthEnd) ?: 0
+    val incMonth = dao.getTotalIncome(monthStart, monthEnd) ?: 0
+    val expWeek  = dao.getTotalExpense(weekStart, monthEnd)
+        ?: dao.getTotalIncome(weekStart, monthEnd) ?: 0
+    val expDay   = dao.getTotalExpense(dayStart, monthEnd)
+        ?: dao.getTotalIncome(dayStart, monthEnd) ?: 0
+
+    findViewById<TextView>(R.id.tvExpenseMonth).text = fmt.format(expMonth) + " đ"
+    findViewById<TextView>(R.id.tvIncomeMonth).text  = fmt.format(incMonth) + " đ"
+    findViewById<TextView>(R.id.tvExpenseWeek).text  = fmt.format(expWeek)  + " đ"
+    findViewById<TextView>(R.id.tvExpenseDay).text   = fmt.format(expDay)   + " đ"
+    findViewById<TextView>(R.id.tvTxCount).text      = "${allTx.size} giao dịch"
+
+    // Hiện 5 giao dịch gần nhất — tất cả type
+    val recentList = findViewById<LinearLayout>(R.id.recentList)
+    recentList.removeAllViews()
+    val dateFmt = SimpleDateFormat("dd/MM HH:mm", Locale.getDefault())
+
+    if (allTx.isEmpty()) {
+        val tv = TextView(this)
+        tv.text = "Chưa có giao dịch. Hãy thực hiện giao dịch ngân hàng."
+        tv.setTextColor(0xFF888888.toInt()); tv.textSize = 13f; tv.setPadding(16,16,16,16)
+        recentList.addView(tv)
+        return
     }
+
+    allTx.take(5).forEach { tx ->
+        val row = layoutInflater.inflate(R.layout.item_transaction, recentList, false)
+        val isDebit = tx.type == TransactionType.DEBIT
+        val color = if (isDebit) 0xFFDC2626.toInt() else 0xFF16A34A.toInt()
+        val sign  = if (isDebit) "▼" else "▲"
+        row.findViewById<TextView>(R.id.tvItemBank).text  = tx.bank
+        row.findViewById<TextView>(R.id.tvItemCat).text   = tx.category
+        row.findViewById<TextView>(R.id.tvItemDesc).text  = tx.description.take(50)
+        row.findViewById<TextView>(R.id.tvItemDate).text  = dateFmt.format(Date(tx.timestamp))
+        val tvAmt = row.findViewById<TextView>(R.id.tvItemAmount)
+        tvAmt.text = "$sign ${fmt.format(tx.amount)} đ"
+        tvAmt.setTextColor(color)
+        recentList.addView(row)
+    }
+}
 
     private fun loadDashboard() {
         val dao = AppDatabase.getInstance(applicationContext).transactionDao()
