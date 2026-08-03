@@ -10,27 +10,19 @@ object BankSmsParser {
         "HDBank","8149","8150","8900","6088","VIB","OCB"
     )
 
-    // Ưu tiên bắt "GD moi nhat: -50,000 VND" hoặc "giao dich: 50,000"
     private val TRANSACTION_PATTERNS = listOf(
-        // Dạng SHB: "GD moi nhat: -50,000 VND"
         Regex("""GD\s+moi\s+nhat\s*:\s*[-+]?([\d,.]+)\s*(?:VND|vnd|đ|VNĐ)""", RegexOption.IGNORE_CASE),
-        // Dạng "so tien GD: 50,000"
         Regex("""(?:so tien|tien giao dich|tien GD|amount)\s*:?\s*[-+]?([\d,.]+)""", RegexOption.IGNORE_CASE),
-        // Dạng "PS No/Co 50,000"
         Regex("""(?:PS No|PS Co|Tien vao|Tien ra)\s*:?\s*([\d,.]+)""", RegexOption.IGNORE_CASE),
-        // Dạng "thanh toan 50,000 VND"
         Regex("""(?:thanh toan|chi tieu|nap tien|rut tien)\s+([\d,.]+)\s*(?:VND|vnd|đ)?""", RegexOption.IGNORE_CASE),
-        // Dạng Vietcombank: "50,000VND"
         Regex("""[-+]?([\d,.]+)\s*(?:VND|VNĐ)\b""")
     )
 
-    // Regex tách riêng số dư — để LOẠI TRỪ khỏi số tiền GD
     private val BALANCE_PATTERN = Regex(
-        """(?:SD|so du|balance|du kha dung|so tien hien tai|SDTK.*?la)\s*:?\s*([\d,.]+)\s*(?:VND|vnd|đ)?""",
+        """(?:SD|so du|balance|du kha dung)\s*:?\s*([\d,.]+)\s*(?:VND|vnd|đ)?""",
         RegexOption.IGNORE_CASE
     )
 
-    // Dạng SMS SHB đặc biệt: "SDTK ... la 3,514,763 VND. GD moi nhat: -50,000 VND"
     private val SHB_PATTERN = Regex(
         """SDTK[^.]+la\s+([\d,.]+)\s*VND[^G]*GD\s+moi\s+nhat\s*:\s*[-+]?([\d,.]+)\s*VND""",
         RegexOption.IGNORE_CASE
@@ -49,32 +41,25 @@ object BankSmsParser {
     fun parse(sender: String, body: String): Transaction? {
         val amount = extractTransactionAmount(body) ?: return null
         if (amount < 1000) return null
-        val balance = extractBalance(body)
         return Transaction(
             bank        = detectBank(sender),
             amount      = amount,
             type        = detectType(body),
             description = extractDescription(body),
             category    = CategoryClassifier.classify(body),
-            balance     = balance,
+            balance     = extractBalance(body),
             rawMessage  = body
         )
     }
 
     private fun extractTransactionAmount(body: String): Long? {
-        // Thử pattern SHB trước (tách rõ số dư và số tiền GD)
         val shbMatch = SHB_PATTERN.find(body)
         if (shbMatch != null) {
-            // Group 2 = số tiền GD (50,000)
             val txAmt = shbMatch.groupValues[2]
                 .replace(",","").replace(".","").trim().toLongOrNull()
             if (txAmt != null && txAmt > 1000) return txAmt
         }
-
-        // Lấy số dư để loại trừ
         val balanceAmt = extractBalance(body)
-
-        // Thử từng pattern giao dịch
         for (p in TRANSACTION_PATTERNS) {
             val v = p.find(body)?.groupValues?.get(1)
                 ?.replace(",","")?.replace(".","")?.trim()?.toLongOrNull()
@@ -84,7 +69,6 @@ object BankSmsParser {
     }
 
     private fun extractBalance(body: String): Long? {
-        // Dạng SHB: "SDTK ... la 3,514,763 VND"
         val shbBal = Regex("""SDTK[^l]+la\s+([\d,.]+)\s*VND""", RegexOption.IGNORE_CASE).find(body)
         if (shbBal != null) {
             return shbBal.groupValues[1].replace(",","").replace(".","").toLongOrNull()
@@ -95,6 +79,31 @@ object BankSmsParser {
 
     private fun detectType(body: String): TransactionType {
         val lower = body.lowercase()
-        // SHB dùng dấu - trước số tiền GD
-        if (lower.contains("gd moi nhat") && body.contains("GD moi nhat: -", ignoreCase = true))
-            return
+        if (body.contains("GD moi nhat: -", ignoreCase = true)) return TransactionType.DEBIT
+        if (body.contains("GD moi nhat: +", ignoreCase = true)) return TransactionType.CREDIT
+        return when {
+            DEBIT_WORDS.any  { lower.contains(it) } -> TransactionType.DEBIT
+            CREDIT_WORDS.any { lower.contains(it) } -> TransactionType.CREDIT
+            else -> TransactionType.UNKNOWN
+        }
+    }
+
+    private fun extractDescription(body: String): String {
+        val gdDesc = Regex("""GD\s+moi\s+nhat\s*:.*?VND\s*:\s*(.{3,80})""", RegexOption.IGNORE_CASE).find(body)
+        if (gdDesc != null) return gdDesc.groupValues[1].trim().take(80)
+        val p = Regex("""(?:ND|noi dung|GD|mo ta|ref)\s*:?\s*(.{3,80})""", RegexOption.IGNORE_CASE)
+        return p.find(body)?.groupValues?.get(1)?.trim() ?: body.take(100)
+    }
+
+    private fun detectBank(sender: String) = when {
+        sender.contains("VCB",true)||sender.contains("Vietcombank",true) -> "Vietcombank"
+        sender.contains("BIDV",true)   -> "BIDV"
+        sender.contains("TCB",true)||sender.contains("Techcombank",true) -> "Techcombank"
+        sender.contains("MB",true)     -> "MB Bank"
+        sender.contains("VPB",true)||sender.contains("VPBank",true) -> "VPBank"
+        sender.contains("TPB",true)    -> "TPBank"
+        sender.contains("ACB",true)    -> "ACB"
+        sender.contains("SHB",true)    -> "SHB"
+        else -> sender.take(20)
+    }
+}
